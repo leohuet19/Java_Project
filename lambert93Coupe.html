@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Coupe Méridienne 2D - Lambert 93 & Extrémités</title>
+    <style>
+        body { margin: 0; background: #050510; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        canvas { background: #0b0b1a; border: 1px solid #4facfe; border-radius: 8px; box-shadow: 0 0 20px rgba(79, 172, 254, 0.2); }
+        #info { margin-top: 15px; font-size: 14px; text-align: center; max-width: 650px; line-height: 1.4; color: #aaa; }
+        b { color: #fff; }
+    </style>
+</head>
+<body>
+
+    <canvas id="profileCanvas" width="800" height="600"></canvas>
+    <div id="info">
+        <b>Coupe de profil (Plan Méridien 3°E)</b> : Les points blancs marquent les limites sécantes (44° et 49°N, k=1). Les points cyan indiquent les extrêmes géographiques de la France (Corse au sud et Dunkerque au nord), situés dans les zones où le cône passe au-dessus du sol (k > 1).
+    </div>
+
+    <script>
+        const canvas = document.getElementById('profileCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const R = 250; 
+        const e_visuel = 0.96; 
+        const cx = 400; 
+        const cy = 300; 
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Grille de repère
+            ctx.strokeStyle = '#1a1a3a';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, cy); ctx.lineTo(canvas.width, cy);
+            ctx.moveTo(cx, 0); ctx.lineTo(cx, canvas.height);
+            ctx.stroke();
+
+            // 1. Tracé de l'ellipsoïde
+            ctx.strokeStyle = '#ff0055';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            const latPoints = [];
+            for (let lat = 35; lat <= 55; lat += 0.1) {
+                const latRad = lat * Math.PI / 180;
+                const x = R * Math.cos(latRad);
+                const y = R * e_visuel * Math.sin(latRad);
+                
+                const px = cx + (x - R * 0.65) * 8; 
+                const py = cy - (y - R * 0.70) * 8;
+                
+                latPoints.push({ lat, px, py });
+
+                if (lat === 35) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+
+            // Recherche des points clés
+            const pCorsica = latPoints.find(p => Math.abs(p.lat - 41.3) < 0.05); // Sud Corse ~41.3°N
+            const p44 = latPoints.find(p => Math.abs(p.lat - 44.0) < 0.05);      // Limite sécante 44°N
+            const p49 = latPoints.find(p => Math.abs(p.lat - 49.0) < 0.05);      // Limite sécante 49°N
+            const pNord = latPoints.find(p => Math.abs(p.lat - 51.1) < 0.05);    // Nord France ~51.1°N
+
+            // 2. Tracé de la génératrice du cône (passant par 44° et 49°)
+            if (p44 && p49) {
+                ctx.strokeStyle = '#4facfe';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const dx = p49.px - p44.px;
+                const dy = p49.py - p44.py;
+                const ext = 4.0;
+                ctx.moveTo(p44.px - dx * ext, p44.py - dy * ext);
+                ctx.lineTo(p49.px + dx * ext, p49.py + dy * ext);
+                ctx.stroke();
+            }
+
+            // 3. Affichage des points d'intersection parfaits (k = 1)
+            [p44, p49].forEach(p => {
+                if (p) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(p.px, p.py, 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '11px sans-serif';
+                    ctx.fillText(`${p.lat.toFixed(0)}°N (k=1)`, p.px + 10, p.py + 4);
+                }
+            });
+
+            // 4. Affichage des extrêmes géographiques de la France (Corse et Nord)
+            [pCorsica, pNord].forEach(p => {
+                if (p) {
+                    ctx.fillStyle = '#00ffcc';
+                    ctx.beginPath();
+                    ctx.arc(p.px, p.py, 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#00ffcc';
+                    ctx.font = '11px sans-serif';
+                    const label = (p.lat < 42) ? `Sud Corse (${p.lat.toFixed(1)}°N, k>1)` : `Nord France (${p.lat.toFixed(1)}°N, k>1)`;
+                    ctx.fillText(label, p.px + 10, p.py + 4);
+                }
+            });
+
+            // Repères textuels des zones
+            ctx.fillStyle = '#4facfe';
+            ctx.font = '12px sans-serif';
+            ctx.fillText("Zone Interne : Cône sous terre (k < 1)", cx - 180, cy - 30);
+            ctx.fillText("Zone Externe : Cône dans l'air (k > 1)", cx - 180, cy + 130);
+        }
+
+        draw();
+    </script>
+</body>
+</html>

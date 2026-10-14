@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Projection Lambert 93 - Intersection Exacte</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050510; color: white; font-family: sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        .label { position: absolute; background: rgba(0, 0, 0, 0.8); border: 1px solid #4facfe; padding: 4px 8px; border-radius: 4px; font-size: 12px; pointer-events: none; transform: translate(-50%, -50%); white-space: nowrap; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 8px; z-index: 100; max-width: 300px;}
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <b>Projection Lambert 93</b><br>
+        <span style="color: #4facfe;">■</span> Cône sécant<br>
+        <span style="color: #ff0055;">—</span> Parallèles sécants (44°N, 49°N)<br>
+        <span style="color: #ffff00;">—</span> Axes (X, Y, Z)<br>
+        <b>Relief :</b> Gaufrage millimétrique pour visualiser la coupe
+    </div>
+    <div id="canvas-container"></div>
+    <div id="label44" class="label">44°N (k=1)</div>
+    <div id="label49" class="label">49°N (k=1)</div>
+    <div id="labelApex" class="label">Apex du cône</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2); 
+        dirLight.position.set(5, 10, 5); 
+        scene.add(dirLight);
+
+        // --- AJOUT DES AXES ---
+        const axesHelper = new THREE.AxesHelper(10);
+        scene.add(axesHelper);
+        // --- FIN AJOUT DES AXES ---
+
+        const R = 6.0; 
+        const e_visuel = 0.96; 
+
+        function getVec3(lat, lon, r) {
+            const latRad = THREE.MathUtils.degToRad(lat);
+            const lonRad = THREE.MathUtils.degToRad(lon);
+            return new THREE.Vector3(
+                r * Math.cos(latRad) * Math.cos(lonRad),
+                r * e_visuel * Math.sin(latRad),
+                -r * Math.cos(latRad) * Math.sin(lonRad)
+            );
+        }
+
+        const textureLoader = new THREE.TextureLoader();
+        const textureUrl = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
+        
+        textureLoader.load(textureUrl, (earthTexture) => {
+            earthTexture.colorSpace = THREE.SRGBColorSpace;
+            earthTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            
+            const earthGeom = new THREE.SphereGeometry(R, 128, 128);
+            earthGeom.scale(1, e_visuel, 1);
+            const earthMat = new THREE.MeshStandardMaterial({ map: earthTexture, transparent: true, opacity: 0.9 });
+            scene.add(new THREE.Mesh(earthGeom, earthMat));
+
+            function creerPaysEpais(coords, epaisseur) {
+                const shape = new THREE.Shape();
+                shape.moveTo(coords[0][1], coords[0][0]);
+                for (let i = 1; i < coords.length; i++) {
+                    shape.lineTo(coords[i][1], coords[i][0]);
+                }
+                
+                const geom = new THREE.ExtrudeGeometry(shape, { depth: epaisseur, bevelEnabled: false });
+                const pos = geom.attributes.position;
+                const uv = geom.attributes.uv;
+                
+                for (let i = 0; i < pos.count; i++) {
+                    const lon = pos.getX(i);
+                    const lat = pos.getY(i);
+                    const zDepth = pos.getZ(i);
+                    
+                    uv.setXY(i, (lon + 180) / 360, (lat + 90) / 180);
+                    
+                    const r = R + zDepth; 
+                    const latRad = THREE.MathUtils.degToRad(lat);
+                    const lonRad = THREE.MathUtils.degToRad(lon);
+                    
+                    pos.setXYZ(
+                        i,
+                        r * Math.cos(latRad) * Math.cos(lonRad),
+                        r * e_visuel * Math.sin(latRad),
+                        -r * Math.cos(latRad) * Math.sin(lonRad)
+                    );
+                }
+                
+                geom.computeVertexNormals();
+                
+                return new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ 
+                    map: earthTexture, 
+                    roughness: 0.5 
+                }));
+            }
+
+            const franceCoords = [
+                [51.05, 2.37], [49.50, 6.00], [48.90, 8.20], [47.60, 7.50],
+                [45.90, 7.00], [43.80, 7.50], [43.30, 3.20], [42.40, 3.10],
+                [42.80, 0.00], [43.30, -1.70], [44.80, -1.20], [46.10, -1.20],
+                [47.20, -2.50], [48.30, -4.80], [48.70, -3.00], [49.70, -1.90],
+                [49.50, 0.10], [50.00, 1.50], [50.90, 1.60], [51.05, 2.37]
+            ];
+            const corseCoords = [
+                [43.0, 9.4], [42.6, 9.5], [41.4, 9.2], [41.9, 8.6], [42.6, 8.7], [43.0, 9.4]
+            ];
+
+            // Épaisseur fixée à 0.005 pour que le cône traverse visiblement la texture
+            scene.add(creerPaysEpais(franceCoords, 0.0001));
+            scene.add(creerPaysEpais(corseCoords, 0.0001));
+        });
+
+        function creerParallele(latDeg, color) {
+            const points = [];
+            for (let i = 0; i <= 128; i++) {
+                const lon = (i / 128) * 360 - 180;
+                points.push(getVec3(latDeg, lon, R * 1.002));
+            }
+            return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: color, linewidth: 3 }));
+        }
+        scene.add(creerParallele(44, 0xff0055));
+        scene.add(creerParallele(49, 0xff0055));
+
+        const lat1 = THREE.MathUtils.degToRad(44), lat2 = THREE.MathUtils.degToRad(49);
+        const y1 = R * e_visuel * Math.sin(lat1), r1 = R * Math.cos(lat1);
+        const y2 = R * e_visuel * Math.sin(lat2), r2 = R * Math.cos(lat2);
+        const pente = (y2 - y1) / (r2 - r1);
+        const y_apex = y1 - pente * r1;
+        const r_base = -y_apex / pente;
+
+        const cone = new THREE.Mesh(
+            new THREE.CylinderGeometry(0, r_base, y_apex, 128, 1, true),
+            new THREE.MeshStandardMaterial({ color: 0x4facfe, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+        );
+        cone.position.y = y_apex / 2;
+        scene.add(cone);
+
+        // --- AJOUT POINT APEX ---
+        const apexGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+        const apexMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const apexSphere = new THREE.Mesh(apexGeometry, apexMaterial);
+        apexSphere.position.set(0, y_apex, 0);
+        scene.add(apexSphere);
+        // --- FIN AJOUT POINT APEX ---
+
+        // --- LIGNES DE MESURE (R1, R2, Y_APEX) ---
+        const materialMesure = new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 0.1, gapSize: 0.1 });
+        
+        // Ligne pour R1 (au niveau de 44°N)
+        const pointsR1 = [];
+        pointsR1.push(new THREE.Vector3(0, y1, 0));
+        pointsR1.push(new THREE.Vector3(r1, y1, 0));
+        const geomR1 = new THREE.BufferGeometry().setFromPoints(pointsR1);
+        const lineR1 = new THREE.Line(geomR1, materialMesure);
+        lineR1.computeLineDistances();
+        scene.add(lineR1);
+
+        // Ligne pour R2 (au niveau de 49°N)
+        const pointsR2 = [];
+        pointsR2.push(new THREE.Vector3(0, y2, 0));
+        pointsR2.push(new THREE.Vector3(r2, y2, 0));
+        const geomR2 = new THREE.BufferGeometry().setFromPoints(pointsR2);
+        const lineR2 = new THREE.Line(geomR2, materialMesure);
+        lineR2.computeLineDistances();
+        scene.add(lineR2);
+
+        // Ligne verticale pour l'axe Y (jusqu'à l'apex)
+        const pointsY = [];
+        pointsY.push(new THREE.Vector3(0, 0, 0));
+        pointsY.push(new THREE.Vector3(0, y_apex, 0));
+        const geomY = new THREE.BufferGeometry().setFromPoints(pointsY);
+        const lineY = new THREE.Line(geomY, materialMesure);
+        lineY.computeLineDistances();
+        scene.add(lineY);
+        // --- FIN LIGNES DE MESURE ---
+
+
+        const centreFrance = getVec3(46.5, 3, R);
+        controls.target.copy(centreFrance);
+        camera.position.set(centreFrance.x * 1.4, centreFrance.y * 1.2, centreFrance.z * 1.4);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Gestion des étiquettes HTML (Labels)
+        const label44 = document.getElementById('label44');
+        const label49 = document.getElementById('label49');
+        const labelApex = document.getElementById('labelApex');
+
+        function updateLabels() {
+            // Point arbitraire sur le parallèle 44 (longitude 0 pour la simplicité)
+            const p44 = new THREE.Vector3(r1, y1, 0);
+            p44.project(camera);
+            label44.style.left = (p44.x * 0.5 + 0.5) * window.innerWidth + 'px';
+            label44.style.top = (-(p44.y * 0.5) + 0.5) * window.innerHeight + 'px';
+
+            const p49 = new THREE.Vector3(r2, y2, 0);
+            p49.project(camera);
+            label49.style.left = (p49.x * 0.5 + 0.5) * window.innerWidth + 'px';
+            label49.style.top = (-(p49.y * 0.5) + 0.5) * window.innerHeight + 'px';
+
+            const pApex = new THREE.Vector3(0, y_apex, 0);
+            pApex.project(camera);
+            labelApex.style.left = (pApex.x * 0.5 + 0.5) * window.innerWidth + 'px';
+            labelApex.style.top = (-(pApex.y * 0.5) + 0.5) * window.innerHeight + 'px';
+        }
+
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateLabels(); // Mettre à jour la position des étiquettes à chaque frame
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
